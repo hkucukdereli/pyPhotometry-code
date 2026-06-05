@@ -24,8 +24,16 @@ board.set_mode("2EX_2EM_pulsed")
 board.set_LED_current(LED_1_current=100, LED_2_current=100)
 board.set_sampling_rate(130)
 
+sync_out_config = False  # Disable sync pulse output.
+
+# sync_out_config = {
+#     "inter_pulse_interval_ms": [1000, 5000],
+#     "pulse_duration_ms": 100
+# } # Enable sync pulse output on Digital 1.
+
 # Start recording.
-board.start()  # Start data acqusition.
+
+board.start(sync_out_config)  # Start data acqusition.
 board.record(data_dir=data_dir, subject_ID="m01", file_type="ppd")
 
 # During acqusition process the data coming from the board.
