@@ -18,6 +18,7 @@ available_acquisition_modes = [  # Comment out modes to hide them in GUI dropdow
     "2EX_1EM_pulsed",
     "2EX_2EM_pulsed",
     "3EX_2EM_pulsed",
+    "2EX_1EM_opto",
 ]
 
 default_filetype = "ppd"  # 'ppd' or 'csv'

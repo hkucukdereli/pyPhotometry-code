@@ -128,10 +128,11 @@ class Setups_tab(QtWidgets.QWidget):
 
     def get_max_sampling_rate(self, mode):
         """Get the maximum sampling rate based on device configs and acqusition mode."""
-        n_channels = int(mode[0])
-        mode_type = "pulsed" if "pulsed" in mode else "continuous"
+        # Number of timeslots per cycle, opto mode has an extra timeslot for the opto pulse.
+        n_timeslots = 3 if mode == "2EX_1EM_opto" else int(mode[0])
+        mode_type = "continuous" if "continuous" in mode else "pulsed"
         min_device_rate = min([dc["max_sampling_rate"][mode_type] for dc in self.device_configs.values()])
-        max_sampling_rate = min_device_rate // n_channels if mode_type == "pulsed" else min_device_rate
+        max_sampling_rate = min_device_rate // n_timeslots if mode_type == "pulsed" else min_device_rate
         return max_sampling_rate
 
 

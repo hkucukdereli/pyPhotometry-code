@@ -38,6 +38,7 @@ class Multitab_config:
     data_dir: str
     file_type: str
     setup_configs: List[Setup_config]
+    opto_divisor: int = 1  # Default value allows config files saved without opto_divisor to be loaded.
 
 
 class Status(Enum):
@@ -105,6 +106,13 @@ class Acquisition_tab(QtWidgets.QWidget):
         self.sync_out_label = QtWidgets.QLabel("Sync-out:")
         self.sync_out_checkbox = QtWidgets.QCheckBox()
         self.sync_out_checkbox.stateChanged.connect(self.toggle_sync_out)
+        self.opto_div_label = QtWidgets.QLabel("Opto divisor:")
+        self.opto_div_spinbox = QtWidgets.QSpinBox()
+        self.opto_div_spinbox.setFixedWidth(60)
+        self.opto_div_spinbox.setRange(1, 9999)
+        self.opto_rate_label = QtWidgets.QLabel()
+        self.opto_div_spinbox.valueChanged.connect(self.update_opto_rate)
+        self.rate_spinbox.valueChanged.connect(self.update_opto_rate)
 
         self.settingsgroup_layout = QtWidgets.QHBoxLayout()
         self.settingsgroup_layout.addWidget(self.mode_label, alignment=AlignVCenter)
@@ -113,6 +121,9 @@ class Acquisition_tab(QtWidgets.QWidget):
         self.settingsgroup_layout.addWidget(self.rate_spinbox, alignment=AlignVCenter)
         self.settingsgroup_layout.addWidget(self.sync_out_label, alignment=AlignVCenter)
         self.settingsgroup_layout.addWidget(self.sync_out_checkbox, alignment=AlignVCenter)
+        self.settingsgroup_layout.addWidget(self.opto_div_label, alignment=AlignVCenter)
+        self.settingsgroup_layout.addWidget(self.opto_div_spinbox, alignment=AlignVCenter)
+        self.settingsgroup_layout.addWidget(self.opto_rate_label, alignment=AlignVCenter)
         self.settingsgroup_layout.addStretch()
         self.settings_groupbox.setLayout(self.settingsgroup_layout)
 
@@ -307,8 +318,19 @@ class Acquisition_tab(QtWidgets.QWidget):
         max_sampling_rate = self.setups_tab.get_max_sampling_rate(mode)
         self.rate_spinbox.setRange(0, max_sampling_rate)
         self.rate_spinbox.setValue(max_sampling_rate)
+        for widget in (self.opto_div_label, self.opto_div_spinbox, self.opto_rate_label):
+            widget.setEnabled(mode == "2EX_1EM_opto")  # Opto pulse controls only active in opto mode.
+        self.update_opto_rate()
         for box in self.setupboxes:
             box.select_mode(mode)
+
+    def update_opto_rate(self):
+        """Display the expected opto pulse rate given the sampling rate and opto divisor."""
+        if self.mode_select.currentText() == "2EX_1EM_opto":
+            opto_rate = self.rate_spinbox.value() / self.opto_div_spinbox.value()
+            self.opto_rate_label.setText(f"= {opto_rate:.4g} Hz")
+        else:
+            self.opto_rate_label.setText("= - Hz")
 
     def set_full_Yscale(self):
         for box in self.setupboxes:
@@ -362,6 +384,7 @@ class Acquisition_tab(QtWidgets.QWidget):
             data_dir=self.data_dir_text.text(),
             file_type=self.filetype_select.currentText(),
             setup_configs=[box.get_config() for box in self.setupboxes],
+            opto_divisor=self.opto_div_spinbox.value(),
         )
 
     def check_unique_subject_IDs(self):
@@ -386,6 +409,7 @@ class Acquisition_tab(QtWidgets.QWidget):
         self.mode_select.setCurrentIndex(self.mode_select.findText(multitab_config.mode))
         self.rate_spinbox.setValue(multitab_config.sampling_rate)
         self.sync_out_checkbox.setChecked(multitab_config.sync_out)
+        self.opto_div_spinbox.setValue(multitab_config.opto_divisor)
         self.data_dir_text.setText(multitab_config.data_dir)
         self.filetype_select.setCurrentIndex(self.filetype_select.findText(multitab_config.file_type))
         for box, setup_config_dict in zip(self.setupboxes, multitab_config.setup_configs):
@@ -615,7 +639,7 @@ class Setupbox(QtWidgets.QFrame):
         # self.select_mode(self.acquisition_tab.mode_select.currentText())
         self.board.set_sampling_rate(self.acquisition_tab.rate_spinbox.value())
         self.signals_plot.reset(self.board.sampling_rate)
-        self.board.start(self.acquisition_tab.sync_out_config)
+        self.board.start(self.acquisition_tab.sync_out_config, self.acquisition_tab.opto_div_spinbox.value())
         self.status = Status.RUNNING
         self.acquisition_tab.update_status()
         # Update UI.

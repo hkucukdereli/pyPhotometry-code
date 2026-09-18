@@ -51,14 +51,17 @@ class Acquisition_board(Pyboard):
             "2EX_1EM_pulsed",
             "2EX_2EM_pulsed",
             "3EX_2EM_pulsed",
-        ], "Invalid mode, value values: '2EX_2EM_continuous', '2EX_1EM_pulsed', '2EX_2EM_pulsed', or '3EX_2EM_pulsed'."
+            "2EX_1EM_opto",
+        ], "Invalid mode, value values: '2EX_2EM_continuous', '2EX_1EM_pulsed', '2EX_2EM_pulsed', '3EX_2EM_pulsed' or '2EX_1EM_opto'."
         self.mode = mode
         self.n_analog_signals = 3 if mode == "3EX_2EM_pulsed" else 2
         self.n_digital_signals = 1 if mode == "3EX_2EM_pulsed" else 2
-        self.pulsed_mode = mode.split("_")[-1] == "pulsed"
+        self.pulsed_mode = mode.split("_")[-1] in ("pulsed", "opto")
+        # Number of timeslots per cycle in pulsed modes, opto mode has an extra timeslot for the opto pulse.
+        self.n_timeslots = 3 if mode == "2EX_1EM_opto" else self.n_analog_signals
         self.max_LED_current = self.config["max_LED_current"]["pulsed" if self.pulsed_mode else "continuous"]
         if self.pulsed_mode:
-            self.max_rate = self.config["max_sampling_rate"]["pulsed"] // self.n_analog_signals
+            self.max_rate = self.config["max_sampling_rate"]["pulsed"] // self.n_timeslots
         else:
             self.max_rate = self.config["max_sampling_rate"]["continuous"]
         self.exec("p.set_mode('{}')".format(mode))
@@ -89,9 +92,14 @@ class Acquisition_board(Pyboard):
         )
         self.serial_chunk_size = (self.buffer_size + 2) * 2
 
-    def start(self, sync_out_config):
-        """Start data aquistion and streaming on the pyboard."""
-        self.exec_raw_no_follow("p.start({},{},{})".format(self.sampling_rate, self.buffer_size, sync_out_config))
+    def start(self, sync_out_config, opto_divisor=1):
+        """Start data aquistion and streaming on the pyboard. In mode '2EX_1EM_opto' an opto
+        pulse is output on digital 2 every opto_divisor cycles, in other modes it is ignored."""
+        assert int(opto_divisor) >= 1, "opto_divisor must be a positive integer."
+        self.opto_divisor = int(opto_divisor)
+        self.exec_raw_no_follow(
+            "p.start({},{},{},{})".format(self.sampling_rate, self.buffer_size, sync_out_config, self.opto_divisor)
+        )
         self.chunk_number = 0  # Number of data chunks recieved from board, modulo 2**16.
         self.running = True
 
@@ -115,6 +123,9 @@ class Acquisition_board(Pyboard):
             "LED_current": self.LED_current,
             "version": VERSION,
         }
+        if self.mode == "2EX_1EM_opto":
+            self.header_dict["opto_divisor"] = self.opto_divisor
+            self.header_dict["opto_pulse_rate"] = self.sampling_rate / self.opto_divisor
         if file_type == "ppd":  # Single binary .ppd file.
             self.data_file = open(file_path, "wb")
             data_header = json.dumps(self.header_dict).encode()
