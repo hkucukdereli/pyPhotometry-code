@@ -35,7 +35,7 @@ function data_struct = import_ppd(file_path)
         n_analog = data_struct.n_analog_signals;
         n_digital = data_struct.n_digital_signals;
         if compareVersions(data_struct.version, '1.1'); % Version >= 1.1
-            has_baselines = contains(data_struct.mode, 'pulsed');
+            has_baselines = contains(data_struct.mode, 'pulsed') || contains(data_struct.mode, 'opto'); % Opto mode is pulsed.
         else
             has_baselines = false;
         end

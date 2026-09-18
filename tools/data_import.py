@@ -41,6 +41,9 @@ def import_ppd(file_path, low_pass=20, high_pass=0.01):
             'digital_y'     - Digital signal
             'pulse_inds_y'  - Locations of rising edges on digital signal (samples).
             'pulse_times_y' - Times of rising edges on digital signal (ms).
+        In mode '2EX_1EM_opto' digital 2 is an output and 'digital_2' is 1 for samples where
+        an opto pulse was output following the sample. If 'opto_divisor' is 1 a pulse follows
+        every sample, so 'digital_2' is always 1 and 'pulse_times_2' is empty.
     """
 
     # Read data from file --------------------------------------------------------------
@@ -65,7 +68,7 @@ def import_ppd(file_path, low_pass=20, high_pass=0.01):
     else:
         n_analog_signals = header_dict["n_analog_signals"]
         n_digital_signals = header_dict["n_digital_signals"]
-        pulsed_mode = "pulsed" in acquisition_mode
+        pulsed_mode = "pulsed" in acquisition_mode or "opto" in acquisition_mode  # Opto mode is pulsed.
 
     if version >= parse_version("1.1"):
         has_baselines = pulsed_mode
