@@ -55,19 +55,25 @@ class PyboardError(BaseException):
     pass
 
 class Pyboard:
-    def __init__(self, serial_device, baudrate=115200):
-        self.serial = serial.Serial(serial_device, baudrate=baudrate, interCharTimeout=1)
+    def __init__(self, serial_device, baudrate=115200, timeout=None):
+        # timeout: read timeout in seconds, None blocks until data arrives.
+        self.serial = serial.Serial(serial_device, baudrate=baudrate, timeout=timeout, interCharTimeout=1)
 
     def close(self):
         self.serial.close()
 
-    def read_until(self, min_num_bytes, ending, timeout=10, data_consumer=None):
+    def read_until(self, min_num_bytes, ending, timeout=10, data_consumer=None, max_time=None):
+        # timeout: seconds without receiving any data before giving up.
+        # max_time: total seconds before giving up, even if data keeps arriving.
+        start_time = time.time()
         data = self.serial.read(min_num_bytes)
         if data_consumer:
             data_consumer(data)
         timeout_count = 0
         while True:
             if data.endswith(ending):
+                break
+            elif max_time is not None and (time.time() - start_time) > max_time:
                 break
             elif self.serial.inWaiting() > 0:
                 new_data = self.serial.read(1)
@@ -83,20 +89,22 @@ class Pyboard:
                 time.sleep(0.1)
         return data
 
-    def enter_raw_repl(self):
+    def enter_raw_repl(self, timeout=10):
+        # timeout: seconds to wait for the raw REPL prompt before raising PyboardError.
         self.serial.write(b'\r\x03\x03') # ctrl-C twice: interrupt any running program
-        # flush input (without relying on serial.flushInput())
+        # flush input (without relying on serial.flushInput()), for at most timeout seconds.
+        flush_start = time.time()
         n = self.serial.inWaiting()
-        while n > 0:
+        while n > 0 and (time.time() - flush_start) < timeout:
             self.serial.read(n)
             n = self.serial.inWaiting()
         self.serial.write(b'\r\x01') # ctrl-A: enter raw REPL
-        data = self.read_until(1, b'to exit\r\n>')
+        data = self.read_until(1, b'to exit\r\n>', timeout=timeout, max_time=timeout)
         if not data.endswith(b'raw REPL; CTRL-B to exit\r\n>'):
             print(data)
             raise PyboardError('could not enter raw repl')
         self.serial.write(b'\x04') # ctrl-D: soft reset
-        data = self.read_until(1, b'to exit\r\n>')
+        data = self.read_until(1, b'to exit\r\n>', timeout=timeout, max_time=timeout)
         if not data.endswith(b'raw REPL; CTRL-B to exit\r\n>'):
             print(data)
             raise PyboardError('could not enter raw repl')

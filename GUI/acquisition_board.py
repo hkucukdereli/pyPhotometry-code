@@ -31,6 +31,7 @@ class Acquisition_board(Pyboard):
         self.port = port
         self.clipping_threshold = int(self.config["ADC_max_value"] * 0.98)
         super().__init__(port, baudrate=115200)
+        self.serial.write(b"\xFF")  # Stop signal in case board was left running acquisition.
         self.enter_raw_repl()  # Reset pyboard.
         # Transfer firmware if not already on board.
         self.exec(getsource(_djb2_file))  # Define djb2 hashing function on board.
@@ -312,8 +313,10 @@ def _receive_file(file_path, file_size):
 def get_board_info(port):
     """Get the unique id of pyboard without instantiating an Acquisition_board object."""
     try:
-        board = Pyboard(port)
-        board.enter_raw_repl()
+        # Short timeouts so a serial device that is not a pyboard cannot block the GUI.
+        board = Pyboard(port, timeout=1)
+        board.serial.write(b"\xFF")  # Stop signal in case board was left running acquisition.
+        board.enter_raw_repl(timeout=1)
         unique_id = int(board.eval("int.from_bytes(pyb.unique_id(), 'little')").decode())
         flashdrive_enabled = "MSC" in board.eval("pyb.usb_mode()").decode()
         board.close()

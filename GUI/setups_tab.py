@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from serial.tools import list_ports
@@ -20,6 +21,8 @@ class Setups_tab(QtWidgets.QWidget):
         self.setups = {}  # {port: Setup} # Currently connected setups.
         self.saved_setups = self.load_setups_from_json()  # [Setup_info]
         self.setups_changed = True
+        self.unresponsive_ports = {}  # {port: time last checked} # Serial ports that did not respond as pyboards.
+        self.unresponsive_retry_interval = 30  # Seconds before an unresponsive port is checked again.
 
         self.device_configs = self.get_device_configs()
 
@@ -89,11 +92,20 @@ class Setups_tab(QtWidgets.QWidget):
         """Called regularly when no task running to update tab with currently
         connected boards."""
         ports = set([c[0] for c in list_ports.comports() if ("Pyboard" in c[1]) or ("USB Serial Device" in c[1])])
-        if not ports == self.setups.keys():
+        # Ports that did not respond as pyboards (e.g. other USB serial devices, which Windows also
+        # names 'USB Serial Device') are only checked again after the retry interval or if replugged.
+        self.unresponsive_ports = {
+            port: t_checked
+            for port, t_checked in self.unresponsive_ports.items()
+            if port in ports and (time.time() - t_checked) < self.unresponsive_retry_interval
+        }
+        ports_to_check = ports - self.unresponsive_ports.keys()
+        if not ports_to_check == self.setups.keys():
             # Add any newly connected setups.
-            for port in set(ports) - set(self.setups.keys()):
+            for port in ports_to_check - set(self.setups.keys()):
                 unique_id, flashdrive_enabled = get_board_info(port)
-                if unique_id is None:  # Serial device is not a pyboard.
+                if unique_id is None:  # Serial device is not a pyboard or did not respond.
+                    self.unresponsive_ports[port] = time.time()
                     continue
                 saved_setup = self.get_saved_setup(unique_id=unique_id, port=port)
                 if saved_setup:
