@@ -25,21 +25,21 @@ faulthandler.dump_traceback_later(15, repeat=True)  # Print stack of all threads
 
 print(f"Python {platform.python_version()} on {platform.platform()}, pyserial {serial.__version__}\n")
 
+from GUI.acquisition_board import get_board_info, is_pyboard_port  # noqa: E402
+
 # List serial ports, flagging those the GUI probes as possible pyboards.
 ports = sorted(list_ports.comports(), key=lambda c: c.device)
 print("Serial ports:")
 for c in ports:
-    probed = ("Pyboard" in c.description) or ("USB Serial Device" in c.description)
+    probed = is_pyboard_port(c)
     print(f"  {c.device:8s} {'[probed by GUI]' if probed else '[ignored by GUI]':17s} {c.description}  ({c.hwid})")
 if not ports:
     print("  none found")
 print()
 
 # Probe each candidate port, timing each step.
-from GUI.acquisition_board import get_board_info  # noqa: E402
-
 for c in ports:
-    if ("Pyboard" in c.description) or ("USB Serial Device" in c.description):
+    if is_pyboard_port(c):
         print(f"Probing {c.device} ...", flush=True)
         start_time = time.time()
         unique_id, flashdrive_enabled = get_board_info(c.device)

@@ -310,6 +310,13 @@ def _receive_file(file_path, file_size):
         usb.write(b"ER")
 
 
+def is_pyboard_port(port_info):
+    """Return True if a serial port (a ListPortInfo from serial.tools.list_ports) is likely a pyboard.
+    Identified by MicroPython's USB vendor ID, as on Windows the description of any USB serial
+    device (e.g. Arduino) is just 'USB Serial Device'."""
+    return port_info.vid == 0xF055 or "Pyboard" in port_info.description
+
+
 def get_board_info(port):
     """Get the unique id of pyboard without instantiating an Acquisition_board object."""
     board = None
