@@ -29,7 +29,13 @@ class Photometry:
 
     def set_mode(self, mode):
         # Set the acquisition mode.
-        assert mode in ["2EX_2EM_continuous", "2EX_1EM_pulsed", "2EX_2EM_pulsed", "3EX_2EM_pulsed"], "Invalid mode."
+        assert mode in [
+            "2EX_2EM_continuous",
+            "2EX_1EM_pulsed",
+            "2EX_2EM_pulsed",
+            "3EX_2EM_pulsed",
+            "2EX_1EM_opto",
+        ], "Invalid mode."
         self.mode = mode
         if mode == "2EX_2EM_continuous":
             self.oversampling_rate = self.config["oversampling_rate"]["continuous"]
@@ -38,13 +44,25 @@ class Photometry:
         if self.mode == "3EX_2EM_pulsed":  # Use Digital_2 as LED output.
             self.LED3 = pyb.Pin(self.config["pins"]["digital_2"], pyb.Pin.OUT, pyb.Pin.PULL_DOWN)
             self.DI2 = None
+            self.opto_pin = None
             self.n_analog_signals = 3
             self.n_digital_signals = 1
+        elif self.mode == "2EX_1EM_opto":  # Use Digital_2 as opto pulse output.
+            self.opto_pin = pyb.Pin(self.config["pins"]["digital_2"], pyb.Pin.OUT, pyb.Pin.PULL_DOWN)
+            self.DI2 = None
+            self.LED3 = None
+            self.n_analog_signals = 2
+            self.n_digital_signals = 2  # Digital 2 signal indicates cycles where opto pulse was output.
+            # Opto pulse has same duration as LED on time: 300us wait + oversampled ADC read.
+            self.opto_pulse_us = 300 + (len(self.ovs_buffer) * 1000000) // self.oversampling_rate
         else:  # Use Digital_2 as digital input.
             self.DI2 = pyb.Pin(self.config["pins"]["digital_2"], pyb.Pin.IN, pyb.Pin.PULL_DOWN)
             self.LED3 = None
+            self.opto_pin = None
             self.n_digital_signals = 2
             self.n_analog_signals = 2
+        # Number of timeslots per cycle in pulsed modes, opto mode has an extra timeslot for the opto pulse.
+        self.n_timeslots = 3 if self.mode == "2EX_1EM_opto" else self.n_analog_signals
 
     def set_LED_current(self, LED_1_current=None, LED_2_current=None):
         # Set the LED current.
@@ -67,9 +85,11 @@ class Photometry:
             if self.running and (self.mode == "2EX_2EM_continuous"):
                 self.LED2.write(self.LED_2_value)
 
-    def start(self, sampling_rate, buffer_size, sync_out=False):
+    def start(self, sampling_rate, buffer_size, sync_out=False, opto_divisor=1):
         # Start acquisition, stream data to computer, wait for ctrl+c over serial to stop.
         self.buffer_size = buffer_size
+        self.opto_divisor = opto_divisor  # Opto pulse is output every opto_divisor cycles (opto mode only).
+        self.opto_counter = 0  # Cycles since last opto pulse, pulse is output when 0.
         self.sample_buffers = (array("H", [0] * buffer_size), array("H", [0] * buffer_size))
         self.buffer_data_mv = (memoryview(self.sample_buffers[0]), memoryview(self.sample_buffers[1]))
         self.chunk_header = array("H", [0, 0])
@@ -106,7 +126,7 @@ class Photometry:
             self.LED1.write(self.LED_1_value)
             self.LED2.write(self.LED_2_value)
         else:
-            self.sampling_timer.init(freq=sampling_rate * self.n_analog_signals)
+            self.sampling_timer.init(freq=sampling_rate * self.n_timeslots)
             self.sampling_timer.callback(self.pulsed_ISR)
         while True:
             if self.buffer_ready:
@@ -166,12 +186,22 @@ class Photometry:
     def pulsed_ISR(self, t):
         # Interrupt service routine for pulsed acquisition modes.
 
+        # Opto pulse timeslot, output pulse on digital 2 every opto_divisor cycles, no ADC read.
+        if self.channel == 2 and self.mode == "2EX_1EM_opto":
+            if self.opto_counter == 0:
+                self.opto_pin.value(1)
+                pyb.udelay(self.opto_pulse_us)
+                self.opto_pin.value(0)
+            self.opto_counter = (self.opto_counter + 1) % self.opto_divisor
+            self.channel = 0
+            return
+
         # Read baseline, turn on LED.
         if self.channel == 0:  # Photoreciever=1, LED=1.
             self.ADC1.read_timed(self.ovs_buffer, self.ovs_timer)
             self.LED1.write(self.LED_1_value)
         elif self.channel == 1:
-            if self.mode == "2EX_1EM_pulsed":  # Photoreciever=1, LED=2.
+            if self.mode == "2EX_1EM_pulsed" or self.mode == "2EX_1EM_opto":  # Photoreciever=1, LED=2.
                 self.ADC1.read_timed(self.ovs_buffer, self.ovs_timer)
                 self.LED2.write(self.LED_2_value)
             else:  # Photoreciever=2, LED=2.
@@ -192,11 +222,16 @@ class Photometry:
             self.dig_sample = self.sync_pulse_state if self.sync_out else self.DI1.value()
             self.LED1.write(0)
         elif self.channel == 1:
-            if self.mode == "2EX_1EM_pulsed":  # Photoreciever=1, LED=2.
+            if self.mode == "2EX_1EM_pulsed" or self.mode == "2EX_1EM_opto":  # Photoreciever=1, LED=2.
                 self.ADC1.read_timed(self.ovs_buffer, self.ovs_timer)
             else:  # Photoreciever=2, LED=2.
                 self.ADC2.read_timed(self.ovs_buffer, self.ovs_timer)
-            self.dig_sample = False if self.mode == "3EX_2EM_pulsed" else self.DI2.value()
+            if self.mode == "3EX_2EM_pulsed":
+                self.dig_sample = False
+            elif self.mode == "2EX_1EM_opto":  # Indicates whether opto pulse is output this cycle.
+                self.dig_sample = self.opto_counter == 0
+            else:
+                self.dig_sample = self.DI2.value()
             self.LED2.write(0)
         elif self.channel == 2:  # Photoreciever=1, LED=3.
             self.ADC1.read_timed(self.ovs_buffer, self.ovs_timer)
@@ -211,7 +246,7 @@ class Photometry:
         self.sample_buffers[self.write_buf][self.write_ind + 1] = self.baseline << 1
 
         # Update channel to read next call.
-        self.channel = (self.channel + 1) % self.n_analog_signals
+        self.channel = (self.channel + 1) % self.n_timeslots
 
         # Update write index and switch buffers if buffer full.
         self.write_ind = (self.write_ind + 2) % self.buffer_size
