@@ -56,8 +56,10 @@ class PyboardError(BaseException):
 
 class Pyboard:
     def __init__(self, serial_device, baudrate=115200, timeout=None):
-        # timeout: read timeout in seconds, None blocks until data arrives.
-        self.serial = serial.Serial(serial_device, baudrate=baudrate, timeout=timeout, interCharTimeout=1)
+        # timeout: read and write timeout in seconds, None blocks until data is received / sent.
+        self.serial = serial.Serial(
+            serial_device, baudrate=baudrate, timeout=timeout, write_timeout=timeout, interCharTimeout=1
+        )
 
     def close(self):
         self.serial.close()

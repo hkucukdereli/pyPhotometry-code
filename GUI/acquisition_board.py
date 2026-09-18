@@ -312,6 +312,7 @@ def _receive_file(file_path, file_size):
 
 def get_board_info(port):
     """Get the unique id of pyboard without instantiating an Acquisition_board object."""
+    board = None
     try:
         # Short timeouts so a serial device that is not a pyboard cannot block the GUI.
         board = Pyboard(port, timeout=1)
@@ -319,10 +320,15 @@ def get_board_info(port):
         board.enter_raw_repl(timeout=1)
         unique_id = int(board.eval("int.from_bytes(pyb.unique_id(), 'little')").decode())
         flashdrive_enabled = "MSC" in board.eval("pyb.usb_mode()").decode()
-        board.close()
     except:
         unique_id = None
         flashdrive_enabled = None
+    finally:
+        if board is not None:
+            try:
+                board.close()
+            except Exception:
+                pass
     return unique_id, flashdrive_enabled
 
 
