@@ -6,7 +6,7 @@ from serial.tools import list_ports
 from pyqtgraph.Qt import QtCore, QtWidgets
 
 from GUI.dir_paths import config_dir, devices_dir
-from GUI.acquisition_board import get_board_info, set_flashdrive_enabled
+from GUI.acquisition_board import get_board_info, set_flashdrive_enabled, is_pyboard_port
 from GUI.utility import set_cbox_item
 
 
@@ -91,9 +91,8 @@ class Setups_tab(QtWidgets.QWidget):
     def refresh(self):
         """Called regularly when no task running to update tab with currently
         connected boards."""
-        ports = set([c[0] for c in list_ports.comports() if ("Pyboard" in c[1]) or ("USB Serial Device" in c[1])])
-        # Ports that did not respond as pyboards (e.g. other USB serial devices, which Windows also
-        # names 'USB Serial Device') are only checked again after the retry interval or if replugged.
+        ports = set([c.device for c in list_ports.comports() if is_pyboard_port(c)])
+        # Ports that did not respond as pyboards are only checked again after the retry interval or if replugged.
         self.unresponsive_ports = {
             port: t_checked
             for port, t_checked in self.unresponsive_ports.items()
